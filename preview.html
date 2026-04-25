@@ -1,0 +1,439 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <title>Tank ULTRA V3 GOD MODE FINAL</title>
+  <style>
+    body { margin:0; overflow:hidden; background:#000; }
+    canvas { display:block; margin:auto; }
+  </style>
+</head>
+<body>
+
+<canvas id="game" width="800" height="500"></canvas>
+
+<script>
+const canvas = document.getElementById("game");
+const ctx = canvas.getContext("2d");
+
+// ===== STATE =====
+let state="menu";
+let language="EN";
+let volume=0.5;
+
+// ===== TEXT =====
+const TEXT={
+ EN:{play:"PLAY",settings:"SETTINGS",exit:"EXIT",lang:"LANGUAGE",vol:"VOLUME",hp:"HP",score:"Score"},
+ VI:{play:"CHƠI",settings:"CÀI ĐẶT",exit:"THOÁT",lang:"NGÔN NGỮ",vol:"ÂM THANH",hp:"MÁU",score:"ĐIỂM"}
+};
+
+// ===== AUDIO =====
+let bgm=new Audio("https://cdn.pixabay.com/audio/2022/10/25/audio_9463b3e6b9.mp3");
+bgm.loop=true;
+
+function playMusic(){ bgm.volume=volume; bgm.play().catch(()=>{}); }
+function stopMusic(){ bgm.pause(); bgm.currentTime=0; }
+
+function shootSound(){
+ let a=new Audio("https://cdn.pixabay.com/audio/2023/03/06/audio_1a4b1d8c0c.mp3");
+ a.volume=volume;
+ a.play();
+}
+
+// ===== GAME =====
+let tank,enemies=[],bullets=[],particles=[],boss=null;
+let shake=0,deathEffect=0,isDead=false;
+const SIZE=30;
+
+// ===== SKILL =====
+let skillActive=false;
+let skillTime=0;
+let skillDuration=60000;
+let skillCooldown=300000;
+let lastSkillUse=0;
+let skillNotify=0;
+
+// ===== GUIDE =====
+let showGuide=true;
+
+// ===== MOUSE =====
+let mouseDown=false;
+canvas.addEventListener("mousedown",()=>mouseDown=true);
+canvas.addEventListener("mouseup",()=>mouseDown=false);
+
+function resetGame(){
+ tank={x:400,y:250,hp:100,angle:0,score:0};
+ enemies=[]; bullets=[]; particles=[]; boss=null;
+ isDead=false;
+
+ showGuide=true;
+ setTimeout(()=>showGuide=false,3000);
+}
+
+// ===== INPUT =====
+let keys={};
+document.addEventListener("keydown",e=>{
+ keys[e.key]=true;
+
+ if(e.key==="Escape"){
+  state="menu";
+  stopMusic();
+  document.body.style.cursor="default";
+ }
+
+ // restart
+ if(e.key==="A" && e.shiftKey){
+  resetGame();
+ }
+
+ // SKILL
+ if(e.key==="o" || e.key==="O"){
+  let now=Date.now();
+  if(now - lastSkillUse >= skillCooldown){
+    skillActive=true;
+    skillTime=skillDuration;
+    skillNotify=10000;
+    lastSkillUse=now;
+  }
+ }
+});
+document.addEventListener("keyup",e=>keys[e.key]=false);
+
+let mouse={x:0,y:0};
+canvas.addEventListener("mousemove",e=>{
+ let r=canvas.getBoundingClientRect();
+ mouse.x=e.clientX-r.left;
+ mouse.y=e.clientY-r.top;
+});
+
+canvas.addEventListener("click",()=>{
+ if(state==="menu"){
+  if(mouse.y<250){
+   state="game";
+   resetGame();
+   playMusic();
+   document.body.style.cursor="none";
+  }else state="settings";
+ }
+
+ else if(state==="settings"){
+  if(mouse.y<200) language=(language==="EN")?"VI":"EN";
+  else if(mouse.y<280){ volume+=0.1; if(volume>1) volume=0.1; }
+  else state="menu";
+ }
+
+ else if(state==="game" && !isDead){
+  bullets.push({x:tank.x,y:tank.y,angle:tank.angle,speed:7});
+  shootSound();
+ }
+});
+
+// ===== SPAWN =====
+setInterval(()=>{
+ if(state==="game"){
+  enemies.push({x:Math.random()*760,y:Math.random()*460,size:SIZE,lastHit:0});
+ }
+},2000);
+
+setInterval(()=>{
+ if(state==="game" && !boss){
+  boss={x:100,y:100,size:70,hp:300,lastHit:0};
+ }
+},15000);
+
+// ===== UPDATE =====
+function update(){
+ if(state!=="game") return;
+
+ if(!isDead){
+  if(keys["w"]) tank.y-=3;
+  if(keys["s"]) tank.y+=3;
+  if(keys["a"]) tank.x-=3;
+  if(keys["d"]) tank.x+=3;
+ }
+
+ tank.x=Math.max(20,Math.min(780,tank.x));
+ tank.y=Math.max(20,Math.min(480,tank.y));
+
+ let dx=mouse.x-tank.x;
+ let dy=mouse.y-tank.y;
+ tank.angle=Math.atan2(dy,dx);
+
+ // ===== SKILL =====
+ if(skillActive){
+  skillTime -= 16;
+
+  if(mouseDown){
+    tank.angle += 0.5;
+
+    if(Math.random()<0.8){
+      bullets.push({
+        x:tank.x,
+        y:tank.y,
+        angle:tank.angle,
+        speed:18
+      });
+    }
+  }
+
+  if(skillTime<=0){
+    skillActive=false;
+  }
+}
+
+// notify
+if(skillNotify>0){
+ skillNotify -= 16;
+}
+
+ bullets.forEach((b,i)=>{
+  b.x+=Math.cos(b.angle)*b.speed;
+  b.y+=Math.sin(b.angle)*b.speed;
+  if(b.x<0||b.x>800||b.y<0||b.y>500) bullets.splice(i,1);
+ });
+
+ let now=Date.now();
+
+// ===== ENEMY =====
+ enemies.forEach((e,ei)=>{
+  let dx=tank.x-e.x;
+  let dy=tank.y-e.y;
+  let dist=Math.sqrt(dx*dx+dy*dy)||1;
+
+  e.x+=(dx/dist)*1.5;
+  e.y+=(dy/dist)*1.5;
+
+  if(!isDead && dist<e.size && now-e.lastHit>1000){
+   tank.hp-=5;
+   e.lastHit=now;
+   shake=10;
+  }
+
+  bullets.forEach((b,bi)=>{
+   if(
+    b.x>e.x-e.size/2 && b.x<e.x+e.size/2 &&
+    b.y>e.y-e.size/2 && b.y<e.y+e.size/2
+   ){
+    bullets.splice(bi,1);
+    enemies.splice(ei,1);
+    tank.score+=10;
+
+    for(let i=0;i<20;i++){
+      particles.push({x:e.x,y:e.y,vx:(Math.random()-0.5)*4,vy:(Math.random()-0.5)*4,life:30});
+    }
+   }
+  });
+ });
+
+// ===== BOSS =====
+ if(boss){
+  let dx=tank.x-boss.x;
+  let dy=tank.y-boss.y;
+  let dist=Math.sqrt(dx*dx+dy*dy)||1;
+
+  boss.x+=(dx/dist)*1;
+
+  // DAMAGE 20
+  if(!isDead && dist<boss.size){
+    if(now - boss.lastHit > 1000){
+      tank.hp -= 20;
+      boss.lastHit=now;
+      shake=20;
+    }
+  }
+
+  bullets.forEach((b,bi)=>{
+   if(
+    b.x>boss.x-boss.size/2 && b.x<boss.x+boss.size/2 &&
+    b.y>boss.y-boss.size/2 && b.y<boss.y+boss.size/2
+   ){
+    bullets.splice(bi,1);
+    boss.hp-=10;
+    shake=15;
+   }
+  });
+
+  if(boss.hp<=0){
+    boss=null;
+    tank.score+=200;
+  }
+ }
+
+// ===== DEATH =====
+ if(tank.hp<=0 && !isDead){
+  isDead=true;
+
+  for(let i=0;i<80;i++){
+    particles.push({
+      x:tank.x,y:tank.y,
+      vx:(Math.random()-0.5)*8,
+      vy:(Math.random()-0.5)*8,
+      life:50
+    });
+  }
+
+  shake=25;
+  deathEffect=1;
+
+  setTimeout(()=>resetGame(),700);
+ }
+
+// particles
+ particles.forEach((p,i)=>{
+  p.x+=p.vx;
+  p.y+=p.vy;
+  p.life--;
+  if(p.life<=0) particles.splice(i,1);
+ });
+}
+
+// ===== DRAW =====
+function drawTank(x,y,angle,color,size=30){
+ ctx.save();
+ ctx.translate(x,y);
+
+ ctx.shadowBlur=10;
+ ctx.shadowColor=color;
+
+ ctx.fillStyle="#333";
+ ctx.fillRect(-size/2,-size/2,size,size);
+
+ ctx.fillStyle=color;
+ ctx.fillRect(-size/3,-size/3,size*0.66,size*0.66);
+
+ ctx.rotate(angle);
+ ctx.fillStyle="lime";
+ ctx.fillRect(0,-4,size,8);
+
+ ctx.restore();
+}
+
+function drawMap(){
+ let g=ctx.createLinearGradient(0,0,800,500);
+ g.addColorStop(0,"#1a1a1a");
+ g.addColorStop(1,"#333");
+ ctx.fillStyle=g;
+ ctx.fillRect(0,0,800,500);
+
+ ctx.strokeStyle="#444";
+ for(let x=0;x<800;x+=40){
+  ctx.beginPath();
+  ctx.moveTo(x,0); ctx.lineTo(x,500); ctx.stroke();
+ }
+ for(let y=0;y<500;y+=40){
+  ctx.beginPath();
+  ctx.moveTo(0,y); ctx.lineTo(800,y); ctx.stroke();
+ }
+}
+
+function drawMinimap(){
+ ctx.fillStyle="black";
+ ctx.fillRect(650,10,140,100);
+
+ ctx.fillStyle="green";
+ ctx.fillRect(650+tank.x/6,10+tank.y/5,5,5);
+
+ ctx.fillStyle="red";
+ enemies.forEach(e=>{
+  ctx.fillRect(650+e.x/6,10+e.y/5,4,4);
+ });
+
+ if(boss){
+  ctx.fillStyle="purple";
+  ctx.fillRect(650+boss.x/6,10+boss.y/5,6,6);
+ }
+}
+
+function draw(){
+ ctx.clearRect(0,0,800,500);
+
+ ctx.fillStyle="white";
+ ctx.font="20px Arial";
+
+ if(state==="menu"){
+  ctx.fillText(TEXT[language].play,360,200);
+  ctx.fillText(TEXT[language].settings,330,300);
+  return;
+ }
+
+ if(state==="settings"){
+  ctx.fillText(TEXT[language].lang+": "+(language==="EN"?"ENGLISH":"VIỆT NAM"),180,180);
+  ctx.fillText(TEXT[language].vol+": "+Math.floor(volume*100)+"%",260,240);
+  ctx.fillText(TEXT[language].exit,360,320);
+  return;
+ }
+
+ ctx.save();
+
+ if(shake>0){
+  ctx.translate((Math.random()-0.5)*shake,(Math.random()-0.5)*shake);
+  shake*=0.9;
+ }
+
+ drawMap();
+
+ drawTank(tank.x,tank.y,tank.angle,"green");
+ enemies.forEach(e=>drawTank(e.x,e.y,0,"red"));
+ if(boss) drawTank(boss.x,boss.y,0,"purple",boss.size);
+
+ ctx.fillStyle="yellow";
+ bullets.forEach(b=>{
+  ctx.beginPath();
+  ctx.arc(b.x,b.y,3,0,Math.PI*2);
+  ctx.fill();
+ });
+
+ ctx.fillStyle="orange";
+ particles.forEach(p=>{
+  ctx.fillRect(p.x,p.y,3,3);
+ });
+
+ drawMinimap();
+
+ if(deathEffect>0){
+  ctx.fillStyle="rgba(255,255,255,"+deathEffect+")";
+  ctx.fillRect(0,0,800,500);
+  deathEffect-=0.05;
+ }
+
+// SKILL NOTIFY
+if(skillNotify>0){
+ ctx.fillStyle="rgba(0,0,0,0.7)";
+ ctx.fillRect(200,50,400,50);
+
+ ctx.fillStyle="cyan";
+ ctx.font="18px Arial";
+ ctx.fillText("⚡ SKILL ACTIVATED - HOLD MOUSE!",230,80);
+}
+
+// GUIDE
+if(showGuide){
+ ctx.fillStyle="rgba(0,0,0,0.7)";
+ ctx.fillRect(100,150,600,200);
+
+ ctx.fillStyle="white";
+ ctx.font="16px Arial";
+
+ ctx.fillText("BẤM WASD ĐỂ DI CHUYỂN",200,200);
+ ctx.fillText("SHIFT + A ĐỂ CHƠI LẠI",200,230);
+ ctx.fillText("CLICK CHUỘT ĐỂ BẮN",200,260);
+ ctx.fillText("ESC ĐỂ THOÁT",200,290);
+ ctx.fillText("MỖI 5 PHÚT BẤM O ĐỂ SÀI SKILL",200,320);
+}
+
+ ctx.fillText(TEXT[language].hp+": "+tank.hp,10,20);
+ ctx.fillText(TEXT[language].score+": "+tank.score,10,40);
+
+ ctx.restore();
+}
+
+// LOOP
+function loop(){
+ update();
+ draw();
+ requestAnimationFrame(loop);
+}
+loop();
+</script>
+
+</body>
+</html>
